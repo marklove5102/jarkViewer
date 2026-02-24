@@ -797,6 +797,7 @@ public:
                 operateQueue.push({ ActionENUM::zoomOut });
             }break;
 
+            case '5':
             case VK_NUMPAD5: {
                 operateQueue.push({ ActionENUM::zoomFix });
             }break;

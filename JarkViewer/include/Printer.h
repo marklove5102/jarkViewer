@@ -390,7 +390,8 @@ public:
     }
 
 
-    static void mouseCallback(int event, int x, int y, int flags, void* userdata) {
+    static void mouseCallback(int event, int _x, int _y, int flags, void* userdata) {
+        static int x = 0, y = 0;
         PrintParams* params = static_cast<PrintParams*>(userdata);
 
         switch (event) {
@@ -402,7 +403,7 @@ public:
             }
         }break;
 
-        case cv::EVENT_MOUSEWHEEL: {
+        case cv::EVENT_MOUSEWHEEL: { // 此事件的y坐标异常
             auto wheelValue = cv::getMouseWheelDelta(flags);
 
             if ((100 < x) && (x < 800) && (50 < y) && (y < 100)) {
@@ -420,6 +421,9 @@ public:
         }break;
 
         case cv::EVENT_MOUSEMOVE: {
+            x = _x;
+            y = _y;
+
             if (params->mousePressing) {
                 if (params->mousePressingBrightnessBar) {
                     params->brightness = x < 250 ? 0 : (x > 750 ? 200 : ((x - 250) * 200 / 500));
