@@ -251,6 +251,13 @@ std::string ExifParse::exifDataToString(wstring_view path, const Exiv2::ExifData
                     tagValue = jarkUtils::wstringToUtf8(str);
                 }
                 else {
+                    // 此段内容可能含 '\0' 导致显示不完整，如下两种情况：
+                    // "UNICODE\0"
+                    // "ASCII\0\0\0"
+                    for (auto& c : buf) {
+                        if (c == 0)
+                            c = ' ';
+                    }
                     tagValue = string(buf.begin(), buf.end());
                 }
             }
