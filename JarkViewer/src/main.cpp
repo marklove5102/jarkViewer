@@ -7,13 +7,7 @@
 
 #include "D2D1App.h"
 #include <wrl.h>
-
-// 启用OMP播放动画时 CPU 使用率太高
-//#define ENABLE_OMP
-
-#ifdef ENABLE_OMP
 #include "omp.h"
-#endif
 
 /* TODO
 1. 在鼠标光标位置缩放
@@ -1116,10 +1110,7 @@ public:
 
         switch (srcImg.type()) {
         case CV_8UC4: {
-#ifdef ENABLE_OMP
-#pragma omp parallel for
-#endif
-            const intUnion* srcPtr = (intUnion*)srcImg.ptr();
+#pragma omp parallel for num_threads(4)
             for (int y = yStart; y < yEnd; y++) {
                 auto ptr = ((uint32_t*)canvas.ptr()) + y * canvasW;
                 //int srcY = (int)((int64_t)(y - deltaH) * curPar.ZOOM_BASE / curPar.zoomCur); // 2K屏 50%缩放一帧34ms 100%缩放一帧14ms
@@ -1156,30 +1147,12 @@ public:
                         ptr[x] = getSrcPx4(srcImg, srcY, srcW - 1 - srcX, x, y);
                     }
                     break;
-                }                
-
-                //如果正在拖动/缩放/平移时，则偷懒：每隔一行就直接用上一行数据
-                if (GlobalVar::settingParameter.isOptimizeSlide &&
-                    (mouseIsPressing || curPar.zoomCur >= curPar.ZOOM_BASE * 2 ||
-                        curPar.zoomCur != curPar.zoomTarget || curPar.slideCur != curPar.slideTarget)) {
-                    //if ((y & 1) && (++y < yEnd)) {  // 必须固定奇数或偶数y行，否则透明图拖动/平移时背景格子上下单行像素抖动
-                    //    memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    //}
-                    //上下只能二选一
-                    //if ((srcY & 1) && (++y < yEnd)) {  // 必须固定奇数或偶数srcY行，否则原图拖动/平移上下单行像素抖动
-                    //    memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    //}
-                    if (++y < yEnd) {  // 原图拖动/平移上下单行像素抖动
-                        memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    }
                 }
             }
         }break;
 
         case CV_8UC3: {
-#ifdef ENABLE_OMP
-#pragma omp parallel for
-#endif
+#pragma omp parallel for num_threads(4)
             for (int y = yStart; y < yEnd; y++) {
                 auto ptr = ((uint32_t*)canvas.ptr()) + y * canvasW;
                 //int srcY = (int)((int64_t)(y - deltaH) * curPar.ZOOM_BASE / curPar.zoomCur);
@@ -1217,22 +1190,11 @@ public:
                     }
                     break;
                 }
-
-                // 如果正在拖动/缩放/平移时，则偷懒：每隔一行就直接用上一行数据
-                if (GlobalVar::settingParameter.isOptimizeSlide &&
-                    (mouseIsPressing || curPar.zoomCur >= curPar.ZOOM_BASE * 2 ||
-                        curPar.zoomCur != curPar.zoomTarget || curPar.slideCur != curPar.slideTarget)) {
-                    //if ((srcY & 1) && (++y < yEnd)) {  // 必须固定奇数或偶数srcY行，否则原图拖动/平移上下单行像素抖动
-                    //    memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    //}
-                    if (++y < yEnd) {  // 原图拖动/平移上下单行像素抖动
-                        memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    }
-                }
             }
         }break;
 
         case CV_8UC1: {
+#pragma omp parallel for num_threads(4)
             for (int y = yStart; y < yEnd; y++) {
                 auto ptr = ((uint32_t*)canvas.ptr()) + y * canvasW;
                 //int srcY = (int)((int64_t)(y - deltaH) * curPar.ZOOM_BASE / curPar.zoomCur);
@@ -1269,18 +1231,6 @@ public:
                         ptr[x] = getSrcPx1(srcImg, srcY, srcW - 1 - srcX);
                     }
                     break;
-                }
-
-                // 如果正在拖动/缩放/平移时，则偷懒：每隔一行就直接用上一行数据
-                if (GlobalVar::settingParameter.isOptimizeSlide &&
-                    (mouseIsPressing || curPar.zoomCur >= curPar.ZOOM_BASE * 2 ||
-                        curPar.zoomCur != curPar.zoomTarget || curPar.slideCur != curPar.slideTarget)) {
-                    //if ((srcY & 1) && (++y < yEnd)) {  // 必须固定奇数或偶数srcY行，否则原图拖动/平移上下单行像素抖动
-                    //    memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    //}
-                    if (++y < yEnd) {  // 原图拖动/平移上下单行像素抖动
-                        memcpy(((uint32_t*)canvas.ptr()) + y * canvasW, ptr, canvasW * 4ULL);
-                    }
                 }
             }
         }break;

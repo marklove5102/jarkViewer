@@ -21,7 +21,7 @@ const char* const UIStringTable[STRING_MAX_NUM][2] = {
     {"本软件原生绿色单文件，请把软件放置到合适位置再关联文件格式，若软件位置变化则需重新关联。\n若不再使用本软件，请点击【全不选】再点击【立即关联】即可移除所有关联关系。", "This software is a portable single file.  Please place the software in an appropriate location before associating file formats.\nIf you no longer to use this software,  please click \"Clear All\" and then click \"Apply\" to remove all associations." },
     {"旋转动画", "Rotate Animation"},
     {"缩放动画", "Zoom Animation"},
-    {"优化渲染 (拖动图像时会微微失真)", "Optimized rendering (slight distortion when dragging)"},
+    {"XX", "XX"},
     {"删除前提示", "Confirm Before Delete"},
     {"切换动画模式", "Switch Animation Mode"},
     {"幻灯片顺序", "Slideshow Order"},

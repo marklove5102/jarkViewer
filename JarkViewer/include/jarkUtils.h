@@ -117,7 +117,7 @@ struct SettingParameter {
 
     bool isAllowRotateAnimation = true;
     bool isAllowZoomAnimation = true;
-    bool isOptimizeSlide = false;           // 优化图像平移性能 （实为渲染工作量偷懒减半）
+    bool reserve3 = false;
     bool isNoteBeforeDelete = true;         // 删除前提示
     uint32_t switchImageAnimationMode = 0;  // 0: 无动画  1:上下滑动  2:左右滑动
 
