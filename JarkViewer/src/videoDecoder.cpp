@@ -104,9 +104,13 @@ static int64_t io_seek(void* opaque, int64_t offset, int whence) {
 // 获取旋转角度 (度)
 static int get_rotation_angle(AVStream* stream) {
     int32_t rotate = 0;
-    for (int i = 0; i < stream->nb_side_data; i++) {
-        if (stream->side_data[i].type == AV_PKT_DATA_DISPLAYMATRIX) {
-            rotate = av_display_rotation_get(reinterpret_cast<const int32_t*>(stream->side_data[i].data));
+    if (!stream || !stream->codecpar) {
+        return 0;
+    }
+
+    for (int i = 0; i < stream->codecpar->nb_coded_side_data; i++) {
+        if (stream->codecpar->coded_side_data[i].type == AV_PKT_DATA_DISPLAYMATRIX) {
+            rotate = av_display_rotation_get(reinterpret_cast<const int32_t*>(stream->codecpar->coded_side_data[i].data));
             break;
         }
     }
@@ -118,8 +122,9 @@ static int get_rotation_angle(AVStream* stream) {
 std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) {
     std::vector<cv::Mat> frames;
 
-    if (!videoBuffer || size == 0) {
-        throw std::invalid_argument("Invalid video buffer");
+    if (!videoBuffer || size < 65536) {
+        JARK_LOG("Invalid video buffer or size");
+        return frames;
     }
 
     // 1. 初始化 FFmpeg (通常应用程序启动时调用一次即可，这里确保安全性)
@@ -128,30 +133,37 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
     // 2. 准备自定义 IO 上下文
     BufferContext bufferCtx{ videoBuffer, size, 0 };
     unsigned char* ioBuffer = static_cast<unsigned char*>(av_malloc(4096));
-    if (!ioBuffer) throw std::bad_alloc();
+    if (!ioBuffer) {
+        JARK_LOG("bad_alloc");
+        return frames;
+    }
 
     AVIOContext* avioCtx = avio_alloc_context(ioBuffer, 4096, 0, &bufferCtx, io_read_packet, nullptr, io_seek);
     if (!avioCtx) {
         av_free(ioBuffer);
-        throw std::runtime_error("Failed to allocate AVIOContext");
+        JARK_LOG("Failed to allocate AVIOContext");
+        return frames;
     }
 
     // 3. 打开输入格式上下文
     std::unique_ptr<AVFormatContext, AvFormatContextDeleter> formatCtx(avformat_alloc_context());
     if (!formatCtx) {
         avio_context_free(&avioCtx);
-        throw std::runtime_error("Failed to allocate AVFormatContext");
+        JARK_LOG("Failed to allocate AVFormatContext");
+        return frames;
     }
 
     formatCtx->pb = avioCtx;
     // 文件名设为空，因为我们是流式输入
     auto ptr = formatCtx.get();
-    if (avformat_open_input(&ptr, "", nullptr, nullptr) < 0) {
-        throw std::runtime_error("Failed to open input stream");
+    if (ptr == nullptr || avformat_open_input(&ptr, "", nullptr, nullptr) < 0) {
+        JARK_LOG("Failed to open input stream");
+        return frames;
     }
 
     if (avformat_find_stream_info(formatCtx.get(), nullptr) < 0) {
-        throw std::runtime_error("Failed to find stream info");
+        JARK_LOG("Failed to find stream info");
+        return frames;
     }
 
     // 4. 查找视频流
@@ -164,7 +176,8 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
     }
 
     if (videoStreamIndex == -1) {
-        throw std::runtime_error("No video stream found");
+        JARK_LOG("No video stream found");
+        return frames;
     }
 
     AVStream* videoStream = formatCtx->streams[videoStreamIndex];
@@ -172,23 +185,27 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
     // 5. 获取解码器并打开
     const AVCodec* codec = avcodec_find_decoder(videoStream->codecpar->codec_id);
     if (!codec) {
-        throw std::runtime_error("Codec not found");
+        JARK_LOG("Codec not found");
+        return frames;
     }
 
     std::unique_ptr<AVCodecContext, AvCodecContextDeleter> codecCtx(avcodec_alloc_context3(codec));
     if (!codecCtx) {
-        throw std::runtime_error("Failed to allocate codec context");
+        JARK_LOG("Failed to allocate codec context");
+        return frames;
     }
 
     if (avcodec_parameters_to_context(codecCtx.get(), videoStream->codecpar) < 0) {
-        throw std::runtime_error("Failed to copy codec parameters");
+        JARK_LOG("Failed to copy codec parameters");
+        return frames;
     }
 
     // 设置多线程解码 (可选，小视频单线程也够)
     codecCtx->thread_count = 4;
 
     if (avcodec_open2(codecCtx.get(), codec, nullptr) < 0) {
-        throw std::runtime_error("Failed to open codec");
+        JARK_LOG("Failed to open codec");
+        return frames;
     }
 
     // 6. 准备颜色空间转换上下文 (YUV -> BGR)
@@ -199,7 +216,8 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
     ));
 
     if (!swsCtx) {
-        throw std::runtime_error("Failed to create SwsContext");
+        JARK_LOG("Failed to create SwsContext");
+        return frames;
     }
 
     // 7. 准备帧和包
@@ -208,13 +226,17 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
     std::unique_ptr<AVPacket, AvPacketDeleter> packet(av_packet_alloc());
 
     if (!frame || !rgbFrame || !packet) {
-        throw std::runtime_error("Failed to allocate frames/packets");
+        JARK_LOG("Failed to allocate frames/packets");
+        return frames;
     }
 
     // 为 rgbFrame 分配缓冲区
     int numBytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codecCtx->width, codecCtx->height, 1);
     uint8_t* rgbBuffer = static_cast<uint8_t*>(av_malloc(numBytes * sizeof(uint8_t)));
-    if (!rgbBuffer) throw std::bad_alloc();
+    if (!rgbBuffer) {
+        JARK_LOG("bad_alloc");
+        return frames;
+    }
 
     // 将 rgbBuffer 关联到 rgbFrame
     av_image_fill_arrays(rgbFrame->data, rgbFrame->linesize, rgbBuffer,
@@ -228,7 +250,8 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
         if (packet->stream_index == videoStreamIndex) {
             int ret = avcodec_send_packet(codecCtx.get(), packet.get());
             if (ret < 0) {
-                //std::cerr << "Error sending packet: " << av_err2str(ret) << std::endl;
+                char errStr[64] = { 0 };
+                JARK_LOG("Error sending packet: {}", av_make_error_string(errStr, sizeof(errStr), ret));
                 break;
             }
 
@@ -238,7 +261,8 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
                     break;
                 }
                 else if (ret < 0) {
-                    //std::cerr << "Error decoding frame: " << av_err2str(ret) << std::endl;
+                    char errStr[64] = { 0 };
+                    JARK_LOG("Error decoding frame: {}", av_make_error_string(errStr, sizeof(errStr), ret));
                     break;
                 }
 
@@ -254,29 +278,24 @@ std::vector<cv::Mat> DecodeVideoFrames(const uint8_t* videoBuffer, size_t size) 
                 cv::Mat finalMat = decodedMat.clone();
 
                 // 11. 处理旋转
-                // FFmpeg 的 rotation 是逆时针，OpenCV rotate 是顺时针
-                // 例如：metadata 说 -90 (逆时针 90 = 顺时针 270)，我们需要顺时针旋转 270 或者逆时针 90
-                // 这里统一转换为 OpenCV 的 RotateFlags
                 if (rotation != 0) {
-                    int cvRotateCode = 0;
-                    // 规范化角度到 0-360
+                    int cvRotateCode = -1;
                     int normRot = (rotation % 360 + 360) % 360;
 
                     if (normRot == 90) {
-                        cvRotateCode = cv::ROTATE_90_COUNTERCLOCKWISE;
+                        cvRotateCode = cv::ROTATE_90_CLOCKWISE;
                     }
                     else if (normRot == 180) {
                         cvRotateCode = cv::ROTATE_180;
                     }
                     else if (normRot == 270) {
-                        cvRotateCode = cv::ROTATE_90_CLOCKWISE;
+                        cvRotateCode = cv::ROTATE_90_COUNTERCLOCKWISE;
                     }
 
-                    if (cvRotateCode != 0) {
+                    if (cvRotateCode >= 0) {
                         cv::rotate(finalMat, finalMat, cvRotateCode);
                     }
                 }
-                JARK_LOG("Decoded frame with rotation: {} degrees", rotation);
 
                 frames.push_back(std::move(finalMat));
             }
