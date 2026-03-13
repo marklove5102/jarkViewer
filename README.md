@@ -115,4 +115,4 @@ vcpkg install opencv4[core,contrib,freetype,ipp,jasper,jpeg,jpegxl,nonfree,opene
 
 ## 📜 License
 
-本项目采用 MIT 许可证开放源代码。了解更多内容，请查看 [LICENSE 文件](https://github.com/jark006/JarkViewer/blob/main/LICENSE)。
+本项目采用 GPL-3.0 许可证开放源代码。了解更多内容，请查看 [LICENSE 文件](https://github.com/jark006/JarkViewer/blob/main/LICENSE)。

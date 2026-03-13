@@ -114,4 +114,4 @@ vcpkg install opencv4[core,contrib,freetype,ipp,jasper,jpeg,jpegxl,nonfree,opene
 
 ## 📜 License
 
-This project is open-sourced under the MIT License. For more details, see the [LICENSE file](https://github.com/jark006/JarkViewer/blob/main/LICENSE).
+This project is open-sourced under the GPL-3.0 License. For more details, see the [LICENSE file](https://github.com/jark006/JarkViewer/blob/main/LICENSE).
