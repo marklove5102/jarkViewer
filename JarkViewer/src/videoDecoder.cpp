@@ -110,7 +110,7 @@ static int get_rotation_angle(AVStream* stream) {
 
     for (int i = 0; i < stream->codecpar->nb_coded_side_data; i++) {
         if (stream->codecpar->coded_side_data[i].type == AV_PKT_DATA_DISPLAYMATRIX) {
-            rotate = av_display_rotation_get(reinterpret_cast<const int32_t*>(stream->codecpar->coded_side_data[i].data));
+            rotate = (int)av_display_rotation_get(reinterpret_cast<const int32_t*>(stream->codecpar->coded_side_data[i].data));
             break;
         }
     }

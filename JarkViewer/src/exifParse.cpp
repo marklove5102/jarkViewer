@@ -218,56 +218,68 @@ std::string ExifParse::exifDataToString(wstring_view path, const Exiv2::ExifData
             }
         }
         else if (tagName == "Exif.Photo.UserComment") { // 可能包含AI生图prompt信息
-            bool isPrompt = false;
-            auto a = tag.value().clone();
-            vector<uint8_t> buf(a->size());
-            a->copy(buf.data(), Exiv2::ByteOrder::bigEndian);
-            if (!memcmp(buf.data(), "UNICODE\0", 8)) {
-                wstring_view str((wchar_t*)(buf.data() + 8), (buf.size() - 8) / 2);
-                tagValue = jarkUtils::wstringToUtf8(str);
-                auto idx = tagValue.find("\nNegative prompt:");
-                if (idx != string::npos) {
-                    isPrompt = true;
-                    tagValue.replace(idx, 17, getUIString(44));
-                    tagValue = std::format("{}{}{}", getUIString(46), getUIString(43), tagValue);
-                }
+            auto tagValueClone = tag.value().clone();
 
-                idx = tagValue.find("\nSteps:");
-                if (idx != string::npos) {
-                    isPrompt = true;
-                    tagValue.replace(idx, 7, getUIString(45));
-                }
-                
-                if (tagValue.front() == '{' && tagValue.back() == '}') { // ComfyUI JSON format
-                    isPrompt = true;
-                    tagValue = getUIString(52) + jarkUtils::convertUnicodeEscapesToUTF8(tagValue);
-                }
+            if (tagValueClone->size() == 0 || tagValueClone->size() > INT32_MAX) {
+                tagValue.clear();
             }
-
-            if(!isPrompt){
-                a->copy(buf.data(), Exiv2::ByteOrder::littleEndian);
+            else {
+                bool isPrompt = false;
+                vector<uint8_t> buf(tagValueClone->size());
+                tagValueClone->copy(buf.data(), Exiv2::ByteOrder::bigEndian);
                 if (!memcmp(buf.data(), "UNICODE\0", 8)) {
                     wstring_view str((wchar_t*)(buf.data() + 8), (buf.size() - 8) / 2);
                     tagValue = jarkUtils::wstringToUtf8(str);
-                }
-                else {
-                    // 此段内容可能含 '\0' 导致显示不完整，如下两种情况：
-                    // "UNICODE\0"
-                    // "ASCII\0\0\0"
-                    for (auto& c : buf) {
-                        if (c == 0)
-                            c = ' ';
+                    auto idx = tagValue.find("\nNegative prompt:");
+                    if (idx != string::npos) {
+                        isPrompt = true;
+                        tagValue.replace(idx, 17, getUIString(44));
+                        tagValue = std::format("{}{}{}", getUIString(46), getUIString(43), tagValue);
                     }
-                    tagValue = string(buf.begin(), buf.end());
+
+                    idx = tagValue.find("\nSteps:");
+                    if (idx != string::npos) {
+                        isPrompt = true;
+                        tagValue.replace(idx, 7, getUIString(45));
+                    }
+
+                    if (tagValue.front() == '{' && tagValue.back() == '}') { // ComfyUI JSON format
+                        isPrompt = true;
+                        tagValue = getUIString(52) + jarkUtils::convertUnicodeEscapesToUTF8(tagValue);
+                    }
+                }
+
+                if (!isPrompt) {
+                    tagValueClone->copy(buf.data(), Exiv2::ByteOrder::littleEndian);
+                    if (!memcmp(buf.data(), "UNICODE\0", 8)) {
+                        wstring_view str((wchar_t*)(buf.data() + 8), (buf.size() - 8) / 2);
+                        tagValue = jarkUtils::wstringToUtf8(str);
+                    }
+                    else {
+                        // 此段内容可能含 '\0' 导致显示不完整，如下两种情况：
+                        // "UNICODE\0"
+                        // "ASCII\0\0\0"
+                        for (auto& c : buf) {
+                            if (c == 0)
+                                c = ' ';
+                        }
+                        tagValue = string(buf.begin(), buf.end());
+                    }
                 }
             }
         }
         else if (exifTagsUnicodeStr.contains(tagName)) {
-            auto a = tag.value().clone();
-            vector<WCHAR> buf(a->size()/2+1, 0);
-            a->copy((uint8_t*)buf.data(), Exiv2::ByteOrder::littleEndian);
-            wstring_view str(buf.data(), buf.size());
-            tagValue = jarkUtils::wstringToUtf8(str);            
+            auto tagValueClone = tag.value().clone();
+
+            if (tagValueClone->size() == 0 || tagValueClone->size() > INT32_MAX) {
+                tagValue.clear();
+            }
+            else {
+                vector<WCHAR> buf(tagValueClone->size() / 2 + 1, 0);
+                tagValueClone->copy((uint8_t*)buf.data(), Exiv2::ByteOrder::littleEndian);
+                wstring_view str(buf.data(), buf.size());
+                tagValue = jarkUtils::wstringToUtf8(str);
+            }
         }
         else if (2 < tagValue.length() && tagValue.length() < 100) {
             auto res = handleMathDiv(tagValue);

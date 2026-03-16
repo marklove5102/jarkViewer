@@ -17,6 +17,7 @@
 1. LunaSVG库支持度较差，考虑更换
 1. 考虑加个按时间日期排序
 1. 部分AVIF图像仍不能正常解码 AVIF_RESULT_BMFF_PARSE_FAILED
+1. 导出实况的视频
 */
 
 std::wstring_view appName = L"JarkViewer";
