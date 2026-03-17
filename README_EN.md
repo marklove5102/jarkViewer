@@ -86,6 +86,8 @@ When cloning the repository source code, only the latest commit is necessary as 
 git clone git@github.com:jark006/JarkViewer.git --depth=1
 ```
 
+**⭐️ It is recommended to visit the [DeepWiki](https://deepwiki.com/jark006/JarkViewer) page of this project, which has more detailed explanations and development-related content, and can help you quickly understand the implementation logic of each module.**
+
 This project is developed using `Visual Studio 2026`, with all third-party libraries statically linked. Developers need to prepare all third-party static library files before compilation. Please download the corresponding version of the third-party static library archive from the link below and extract it to the specified location according to the instructions.
 
 Static Library Download: [https://github.com/jark006/JarkViewer/releases/tag/static_lib](https://github.com/jark006/JarkViewer/releases/tag/static_lib)

@@ -86,6 +86,8 @@ scoop install extras/jarkviewer
 git clone git@github.com:jark006/JarkViewer.git --depth=1
 ```
 
+**⭐ 建议访问本项目的 [DeepWiki](https://deepwiki.com/jark006/JarkViewer) 页面，有更详细的说明和开发相关的内容，可快速理解各个模块的实现逻辑。**
+
 本项目使用 `Visual Studio 2026` 进行开发，全部第三方库静态链接，开发者需要在编译前备好所有第三方静态库文件，请在以下链接下载对应版本的第三方静态库文件压缩包，按说明解压到对应位置。
 
 静态库下载： [https://github.com/jark006/JarkViewer/releases/tag/static_lib](https://github.com/jark006/JarkViewer/releases/tag/static_lib)
