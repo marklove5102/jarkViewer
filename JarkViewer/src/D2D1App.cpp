@@ -25,14 +25,14 @@ void D2D1App::SafeRelease(Interface*& pInterfaceToRelease) {
 }
 
 void D2D1App::loadSettings() {
-    wchar_t modulePath[MAX_PATH];
-    GetModuleFileNameW(NULL, modulePath, MAX_PATH);
-    std::wstring moduleDir(modulePath);
-    size_t lastSlash = moduleDir.find_last_of(L'\\');
-    if (lastSlash != std::wstring::npos) {
-        moduleDir = moduleDir.substr(0, lastSlash);
+    auto exePath = jarkUtils::getCurrentAppPath();
+    size_t lastSlash = exePath.find_last_of(L'\\');
+    if (lastSlash == std::wstring::npos) {
+        GlobalVar::settingPath = L"JarkViewer.db";
+        return;
     }
-    GlobalVar::settingPath = moduleDir + L"\\JarkViewer.db";
+
+    GlobalVar::settingPath = exePath.substr(0, lastSlash) + L"\\JarkViewer.db";
 
     PWSTR appDataPath = nullptr;
     std::wstring oldSettingPath;
@@ -53,7 +53,7 @@ void D2D1App::loadSettings() {
         if (readLen == sizeof(SettingParameter) && !memcmp(GlobalVar::settingHeader.data(), tmp.header, GlobalVar::settingHeader.length())) {
             GlobalVar::settingParameter = tmp;
             loaded = true;
-            MoveFileExW(oldSettingPath.c_str(), GlobalVar::settingPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED);
+            DeleteFileW(oldSettingPath.c_str());
         }
     }
 
