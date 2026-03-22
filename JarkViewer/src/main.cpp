@@ -1072,8 +1072,9 @@ public:
         if (xEnd > canvasW) xEnd = canvasW;
         if (yEnd > canvasH) yEnd = canvasH;
 
-        // 使用 xxx.ptr() 需注意 xxx.step1() 必须等于 xxx.cols*4
-        memset(canvas.ptr(), GlobalVar::theme.BG_COLOR, 4ULL * canvasH * canvasW);
+        uint32_t* ptrStart = (uint32_t*)canvas.ptr();
+        uint32_t* ptrEnd = ptrStart + canvasH * canvasW;
+        std::fill(ptrStart, ptrEnd, GlobalVar::theme.BG_COLOR);
 
         if (((srcH == 600 and srcW == 800) or (srcH == 800 and srcW == 600)) and 
             (*((uint32_t*)srcImg.ptr()) == 0xFF464646) or(*((uint32_t*)srcImg.ptr()) == 0xFFEEEEEE)) {

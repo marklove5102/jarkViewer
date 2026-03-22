@@ -100,8 +100,8 @@ struct ThemeColor {
     uint32_t WHITE_GRID_COLOR;
 };
 
-inline constexpr ThemeColor deepTheme{ 0x46, 0xFF282828, 0xFF3C3C3C };
-inline constexpr ThemeColor lightTheme{ 0xEE, 0xFFDDDDDD, 0xFFFFFFFF };
+inline constexpr ThemeColor deepTheme{ 0xFF1F2024, 0xFF282828, 0xFF3C3C3C };
+inline constexpr ThemeColor lightTheme{ 0xFFF1F3F9, 0xFFDDDDDD, 0xFFFFFFFF };
 
 // 不要随意更改此结构体的成员顺序或大小，否则会导致设置文件无法兼容
 // 设置文件大小固定为4096字节
