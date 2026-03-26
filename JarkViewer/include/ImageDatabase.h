@@ -349,21 +349,7 @@ public:
         uint32_t dataOffset;
     };
 
-    struct DibHeader {
-        uint32_t headerSize;
-        int32_t width;
-        int32_t height;
-        uint16_t planes;
-        uint16_t bitCount;
-        uint32_t compression;
-        uint32_t imageSize;
-        int32_t xPelsPerMeter;
-        int32_t yPelsPerMeter;
-        uint32_t clrUsed;
-        uint32_t clrImportant;
-    };
-
-    cv::Mat readDibFromMemory(const uint8_t* data, size_t size);
+    cv::Mat readDibFromMemory(const uint8_t* data, const IconDirEntry& entry);
 
     // https://github.com/corkami/pics/blob/master/binary/ico_bmp.png
     std::tuple<cv::Mat, string> loadICO(wstring_view path, std::span<const uint8_t> buf);

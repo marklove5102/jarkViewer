@@ -12,6 +12,9 @@
 
 #include "blpDecoder.h"
 
+#include <intrin.h>
+#pragma intrinsic(_BitScanForward)
+
 class MappedFileReader {
 public:
     explicit MappedFileReader(std::wstring_view path) {
@@ -640,157 +643,305 @@ cv::Mat ImageDatabase::loadRaw(wstring_view path, std::span<const uint8_t> buf) 
     return retImg;
 }
 
+static int getTrailingZeros(uint32_t value) {
+    unsigned long index = 0;
+    return _BitScanForward(&index, value) ? static_cast<int>(index) : 0;
+}
 
-cv::Mat ImageDatabase::readDibFromMemory(const uint8_t* data, size_t size) {
-    // 确保有足够的数据用于DIB头
-    if (size < sizeof(DibHeader)) {
-        JARK_LOG("Insufficient data for DIB header. {}", size);
-        return {};
+static size_t computePixelDataSize(int width, int bitCount, int rows) {
+    int rowBytes = ((width * bitCount + 31) / 32) * 4;
+    return (size_t)rowBytes * rows;
+}
+
+cv::Mat ImageDatabase::readDibFromMemory(const uint8_t* dibData, const IconDirEntry& entry) {
+    if (!dibData) return cv::Mat();
+
+    const uint32_t headerSize = *reinterpret_cast<const uint32_t*>(dibData);
+    if (headerSize < 12 || headerSize > 124) {
+        JARK_LOG("Invalid DIB header size: {}", headerSize);
+        return cv::Mat();
     }
 
-    // 读取DIB头
-    DibHeader& header = *((DibHeader*)data);
+    // 基础字段
+    int32_t dibWidth = 0, dibHeight = 0;
+    uint16_t bitCount = 0;
+    uint32_t compression = 0, imageSize = 0, clrUsed = 0;
+    uint32_t redMask = 0, greenMask = 0, blueMask = 0, alphaMask = 0;
+    bool isTopDown = false;
 
-    // 验证头大小是否符合预期
-    if (header.headerSize != sizeof(DibHeader)) {
-        JARK_LOG("Unsupported DIB header size {}", header.headerSize);
-        return {};
+    if (headerSize == 12) {
+        // BITMAPCOREHEADER
+        struct CoreHeader {
+            uint32_t size;
+            uint16_t width;
+            uint16_t height;
+            uint16_t planes;
+            uint16_t bitCount;
+        };
+        const CoreHeader* core = reinterpret_cast<const CoreHeader*>(dibData);
+        dibWidth = core->width;
+        dibHeight = core->height;
+        bitCount = core->bitCount;
+        compression = 0; // BI_RGB
+        imageSize = 0;
+        clrUsed = 0;
+    }
+    else {
+        // BITMAPINFOHEADER 及更大版本
+        struct FullHeader {
+            uint32_t size;
+            int32_t width;
+            int32_t height;
+            uint16_t planes;
+            uint16_t bitCount;
+            uint32_t compression;
+            uint32_t imageSize;
+            int32_t xPelsPerMeter;
+            int32_t yPelsPerMeter;
+            uint32_t clrUsed;
+            uint32_t clrImportant;
+        };
+        const FullHeader* full = reinterpret_cast<const FullHeader*>(dibData);
+        dibWidth = full->width;
+        dibHeight = full->height;
+        bitCount = full->bitCount;
+        compression = full->compression;
+        imageSize = full->imageSize;
+        clrUsed = full->clrUsed;
+        isTopDown = (dibHeight < 0);
+        if (isTopDown) dibHeight = -dibHeight;
+
+        // 读取掩码 (V4/V5)
+        if (headerSize >= 108) {
+            const uint32_t* masks = reinterpret_cast<const uint32_t*>(dibData + 40);
+            redMask = masks[0];
+            greenMask = masks[1];
+            blueMask = masks[2];
+            if (headerSize >= 124) alphaMask = masks[3];
+        }
     }
 
-    // 计算调色板大小（如果存在）
-    int paletteSize = 0;
-    if (header.bitCount <= 8) {
-        paletteSize = (header.clrUsed == 0 ? 1 << header.bitCount : header.clrUsed) * 4;
+    // 使用目录条目中的实际尺寸
+    int32_t realWidth = (entry.width == 0) ? 256 : entry.width;
+    int32_t realHeight = (entry.height == 0) ? 256 : entry.height;
+
+    // 判断 AND 掩码位置
+    bool hasAndMaskInImageData = (dibHeight == 2 * realHeight);
+    int32_t pixelRows = hasAndMaskInImageData ? realHeight : dibHeight;
+    if (!hasAndMaskInImageData && dibHeight != realHeight) {
+        JARK_LOG("DIB height ({}) does not match entry height ({}), using entry", dibHeight, realHeight);
+        pixelRows = realHeight;
     }
 
-    // 确保有足够的数据用于调色板和像素数据
-    //const size_t requireSize = (size_t)header.headerSize + paletteSize + header.imageSize; // header.imageSize偶尔大于size
-    //if (size < requireSize) {
-    //    JARK_LOG("Insufficient data for image.");
-    //    JARK_LOG("requireSize {} givenSize {}", requireSize, size);
-    //    return {};
-    //}
-
-    // 读取调色板（如果存在）
-    std::vector<cv::Vec4b> palette;
-    if (paletteSize > 0) {
-        palette.resize(paletteSize / 4);
-        std::memcpy(palette.data(), data + sizeof(DibHeader), paletteSize);
+    // 调色板
+    int numColors = 0;
+    if (bitCount <= 8) {
+        numColors = (clrUsed == 0) ? (1 << bitCount) : clrUsed;
     }
+    size_t paletteOffset = headerSize;
+    const uint8_t* paletteData = dibData + paletteOffset;
+    size_t paletteEntrySize = (headerSize == 12) ? 3 : 4;
+    size_t paletteSize = numColors * paletteEntrySize;
 
-    // 指向像素数据的指针
-    const uint8_t* pixelData = data + header.headerSize + paletteSize;
+    // 像素数据位置
+    const uint8_t* pixelData = dibData + paletteOffset + paletteSize;
+    size_t pixelRowBytes = ((realWidth * bitCount + 31) / 32) * 4;
+    size_t pixelDataSize = (imageSize == 0) ? computePixelDataSize(realWidth, bitCount, pixelRows) : imageSize;
 
-    // 检查是否存在透明度掩码
-    bool hasAlphaMask = (header.height == 2 * header.width);
-    int imageHeight = hasAlphaMask ? header.height / 2 : header.height;
-
-    // 创建cv::Mat对象
-    cv::Mat image(imageHeight, header.width, CV_8UC4);
-
-    // 根据位深度处理像素数据
-    switch (header.bitCount) {
-    case 1: {
-        // 处理1位图像
-        int byteWidth = (header.width + 7) / 8; // 每行字节数
-        for (int y = 0; y < imageHeight; ++y) {
-            for (int x = 0; x < header.width; ++x) {
-                int byteIndex = (imageHeight - y - 1) * byteWidth + x / 8;
-                int bitIndex = x % 8;
-                int colorIndex = (pixelData[byteIndex] >> (7 - bitIndex)) & 0x01;
-                image.at<cv::Vec4b>(y, x) = cv::Vec4b(palette[colorIndex][0], palette[colorIndex][1], palette[colorIndex][2], 255);
+    // 解码调色板
+    std::vector<cv::Vec4b> palette(numColors);
+    if (numColors > 0) {
+        if (headerSize == 12) {
+            // 3字节 RGB
+            for (int i = 0; i < numColors; ++i) {
+                palette[i] = cv::Vec4b(paletteData[i * 3 + 2], paletteData[i * 3 + 1], paletteData[i * 3 + 0], 255);
             }
         }
-        break;
-    }
-    case 4: {
-        // 处理4位图像
-        int byteWidth = (header.width + 1) / 2; // 每行字节数
-        for (int y = 0; y < imageHeight; ++y) {
-            for (int x = 0; x < header.width; ++x) {
-                int byteIndex = (imageHeight - y - 1) * byteWidth + x / 2;
-                int nibbleIndex = x % 2;
-                int colorIndex = (pixelData[byteIndex] >> (4 * (1 - nibbleIndex))) & 0x0F;
-                image.at<cv::Vec4b>(y, x) = cv::Vec4b(palette[colorIndex][0], palette[colorIndex][1], palette[colorIndex][2], 255);
-            }
-        }
-        break;
-    }
-    case 8: {
-        // 处理8位图像
-        for (int y = 0; y < imageHeight; ++y) {
-            for (int x = 0; x < header.width; ++x) {
-                int byteIndex = (imageHeight - y - 1) * header.width + x;
-                int colorIndex = pixelData[byteIndex];
-                image.at<cv::Vec4b>(y, x) = cv::Vec4b(palette[colorIndex][0], palette[colorIndex][1], palette[colorIndex][2], 255);
-            }
-        }
-        break;
-    }
-    case 16: {
-        // 处理16位图像
-        for (int y = 0; y < imageHeight; ++y) {
-            for (int x = 0; x < header.width; ++x) {
-                int pixelIndex = (imageHeight - y - 1) * header.width + x;
-                uint16_t pixel = ((uint16_t*)pixelData)[pixelIndex];
-                uint8_t r = (pixel >> 10) & 0x1F;
-                uint8_t g = (pixel >> 5) & 0x1F;
-                uint8_t b = pixel & 0x1F;
-                image.at<cv::Vec4b>(y, x) = cv::Vec4b(b << 3, g << 3, r << 3, 255);
-            }
-        }
-        break;
-    }
-    case 24: {
-        for (int y = 0; y < imageHeight; ++y) {
-            for (int x = 0; x < header.width; ++x) {
-                int byteIndex = ((imageHeight - y - 1) * header.width + x) * 3;
-                uint8_t r = pixelData[byteIndex];
-                uint8_t g = pixelData[byteIndex + 1];
-                uint8_t b = pixelData[byteIndex + 2];
-                image.at<cv::Vec4b>(y, x) = cv::Vec4b(r, g, b, 255);
-            }
-        }
-        break;
-    }
-    case 32: {
-        memcpy(image.ptr(), pixelData, 4ULL * imageHeight * header.width);
-        cv::flip(image, image, 0); // 上下翻转
-        break;
-    }
-    default:
-        JARK_LOG("Unsupported bit count {}", header.bitCount);
-        return {};
-    }
-
-    // 如果存在透明度掩码
-    if (hasAlphaMask) {
-        if (image.channels() == 3)
-            cv::cvtColor(image, image, cv::COLOR_BGR2BGRA);
-
-        const uint8_t* maskData = pixelData + header.width * header.width * header.bitCount / 8;
-
-        int rowSize = (header.width + 31) / 32 * 4;
-        int totalSize = rowSize * header.height;
-
-        for (int y = 0; y < imageHeight; ++y) {
-            for (int x = 0; x < header.width; ++x) {
-                int byteIndex = ((imageHeight - y - 1) * rowSize) + (x / 8);
-                int bitIndex = 7 - (x % 8);
-
-                // 读取透明掩码
-                int transparencyBit = (maskData[byteIndex] >> bitIndex) & 1;
-                if (transparencyBit == 1)
-                    image.at<cv::Vec4b>(y, x) = cv::Vec4b(0, 0, 0, 0);
-
-                // 读取图像掩码
-                //int imageBit = (maskData[totalSize + byteIndex] >> bitIndex) & 1;
-                //if (imageBit == 0)
-                //    image.at<cv::Vec4b>(y, x) = cv::Vec4b(0, 0, 0, 0);
+        else {
+            // 4字节 BGR?
+            for (int i = 0; i < numColors; ++i) {
+                palette[i] = cv::Vec4b(paletteData[i * 4 + 2], paletteData[i * 4 + 1], paletteData[i * 4 + 0], 255);
             }
         }
     }
-    return image;
+
+    // 创建 BGRA 图像
+    cv::Mat bgra(realHeight, realWidth, CV_8UC4, cv::Scalar(0, 0, 0, 0));
+    uint8_t* bgraData = bgra.data;
+
+    // 解码行函数
+    auto decodeRow = [&](int y, const uint8_t* src) {
+        uint8_t* dst = bgraData + y * realWidth * 4;
+        if (bitCount == 1) {
+            for (int x = 0; x < realWidth; ++x) {
+                int byte = x / 8;
+                int bit = 7 - (x % 8);
+                int idx = (src[byte] >> bit) & 1;
+                dst[x * 4 + 0] = palette[idx][0];
+                dst[x * 4 + 1] = palette[idx][1];
+                dst[x * 4 + 2] = palette[idx][2];
+                dst[x * 4 + 3] = 255;
+            }
+        }
+        else if (bitCount == 4) {
+            for (int x = 0; x < realWidth; ++x) {
+                int byte = x / 2;
+                int nibble = (x % 2) ? (src[byte] & 0x0F) : (src[byte] >> 4);
+                dst[x * 4 + 0] = palette[nibble][0];
+                dst[x * 4 + 1] = palette[nibble][1];
+                dst[x * 4 + 2] = palette[nibble][2];
+                dst[x * 4 + 3] = 255;
+            }
+        }
+        else if (bitCount == 8) {
+            for (int x = 0; x < realWidth; ++x) {
+                int idx = src[x];
+                dst[x * 4 + 0] = palette[idx][0];
+                dst[x * 4 + 1] = palette[idx][1];
+                dst[x * 4 + 2] = palette[idx][2];
+                dst[x * 4 + 3] = 255;
+            }
+        }
+        else if (bitCount == 16) {
+            uint32_t rM = redMask ? redMask : 0x7C00;
+            uint32_t gM = greenMask ? greenMask : 0x03E0;
+            uint32_t bM = blueMask ? blueMask : 0x001F;
+            if (compression == 3 && headerSize == 40) {
+                // BITMAPINFOHEADER + BI_BITFIELDS，掩码紧随头部
+                const uint32_t* masks = reinterpret_cast<const uint32_t*>(dibData + headerSize);
+                rM = masks[0];
+                gM = masks[1];
+                bM = masks[2];
+            }
+            int rShift = getTrailingZeros(rM);
+            int rBits = (rM >> rShift) & 0xFFFF;
+            int gShift = getTrailingZeros(gM);
+            int gBits = (gM >> gShift) & 0xFFFF;
+            int bShift = getTrailingZeros(bM);
+            int bBits = (bM >> bShift) & 0xFFFF;
+            for (int x = 0; x < realWidth; ++x) {
+                uint16_t val = *reinterpret_cast<const uint16_t*>(src + x * 2);
+                uint8_t r = ((val & rM) >> rShift) * 255 / rBits;
+                uint8_t g = ((val & gM) >> gShift) * 255 / gBits;
+                uint8_t b = ((val & bM) >> bShift) * 255 / bBits;
+                dst[x * 4 + 0] = b;
+                dst[x * 4 + 1] = g;
+                dst[x * 4 + 2] = r;
+                dst[x * 4 + 3] = 255;
+            }
+        }
+        else if (bitCount == 24) {
+            for (int x = 0; x < realWidth; ++x) {
+                dst[x * 4 + 0] = src[x * 3 + 0]; // B
+                dst[x * 4 + 1] = src[x * 3 + 1]; // G
+                dst[x * 4 + 2] = src[x * 3 + 2]; // R
+                dst[x * 4 + 3] = 255;
+            }
+        }
+        else if (bitCount == 32) {
+            if (compression == 0) { // BI_RGB
+                for (int x = 0; x < realWidth; ++x) {
+                    dst[x * 4 + 0] = src[x * 4 + 0];
+                    dst[x * 4 + 1] = src[x * 4 + 1];
+                    dst[x * 4 + 2] = src[x * 4 + 2];
+                    dst[x * 4 + 3] = src[x * 4 + 3];
+                }
+            }
+            else if (compression == 3) { // BI_BITFIELDS
+                uint32_t rM = redMask, gM = greenMask, bM = blueMask, aM = alphaMask;
+                if (headerSize == 40) {
+                    const uint32_t* masks = reinterpret_cast<const uint32_t*>(dibData + headerSize);
+                    rM = masks[0];
+                    gM = masks[1];
+                    bM = masks[2];
+                    aM = (headerSize >= 108) ? masks[3] : 0;
+                }
+                int rShift = getTrailingZeros(rM);
+                int rBits = (rM >> rShift) & 0xFFFF;
+                int gShift = getTrailingZeros(gM);
+                int gBits = (gM >> gShift) & 0xFFFF;
+                int bShift = getTrailingZeros(bM);
+                int bBits = (bM >> bShift) & 0xFFFF;
+                int aShift = aM ? getTrailingZeros(aM) : 0;
+                int aBits = aM ? ((aM >> aShift) & 0xFFFF) : 0;
+                for (int x = 0; x < realWidth; ++x) {
+                    uint32_t val = *reinterpret_cast<const uint32_t*>(src + x * 4);
+                    uint8_t r = ((val & rM) >> rShift) * 255 / rBits;
+                    uint8_t g = ((val & gM) >> gShift) * 255 / gBits;
+                    uint8_t b = ((val & bM) >> bShift) * 255 / bBits;
+                    uint8_t a = aM ? (((val & aM) >> aShift) * 255 / aBits) : 255;
+                    dst[x * 4 + 0] = b;
+                    dst[x * 4 + 1] = g;
+                    dst[x * 4 + 2] = r;
+                    dst[x * 4 + 3] = a;
+                }
+            }
+        }
+        };
+
+    // 解码像素行（方向处理）
+    if (isTopDown) {
+        for (int y = 0; y < pixelRows; ++y) {
+            decodeRow(y, pixelData + y * pixelRowBytes);
+        }
+    }
+    else {
+        for (int y = 0; y < pixelRows; ++y) {
+            decodeRow(pixelRows - 1 - y, pixelData + y * pixelRowBytes);
+        }
+    }
+
+    // AND 掩码处理
+    size_t andRowBytes = ((realWidth + 31) / 32) * 4;
+    if (hasAndMaskInImageData) {
+        const uint8_t* andData = pixelData + pixelRows * pixelRowBytes;
+        for (int y = 0; y < realHeight; ++y) {
+            const uint8_t* rowAnd = andData + y * andRowBytes;
+            uint8_t* rowBgra = bgraData + (isTopDown ? y : (realHeight - 1 - y)) * realWidth * 4;
+            for (int x = 0; x < realWidth; ++x) {
+                int byte = x / 8;
+                int bit = 7 - (x % 8);
+                if ((rowAnd[byte] >> bit) & 1) {
+                    rowBgra[x * 4 + 3] = 0;
+                }
+                else if (bitCount != 32) {
+                    rowBgra[x * 4 + 3] = 255;
+                }
+            }
+        }
+    }
+    else {
+        // 独立的 AND 掩码
+        size_t andOffset = pixelDataSize;
+        if (andOffset + andRowBytes * realHeight <= entry.dataSize) {
+            const uint8_t* andData = pixelData + andOffset;
+            for (int y = 0; y < realHeight; ++y) {
+                const uint8_t* rowAnd = andData + y * andRowBytes;
+                uint8_t* rowBgra = bgraData + (isTopDown ? y : (realHeight - 1 - y)) * realWidth * 4;
+                for (int x = 0; x < realWidth; ++x) {
+                    int byte = x / 8;
+                    int bit = 7 - (x % 8);
+                    if ((rowAnd[byte] >> bit) & 1) {
+                        rowBgra[x * 4 + 3] = 0;
+                    }
+                    else if (bitCount != 32) {
+                        rowBgra[x * 4 + 3] = 255;
+                    }
+                }
+            }
+        }
+        else {
+            // 无 AND 掩码，确保不透明
+            for (int y = 0; y < realHeight; ++y) {
+                uint8_t* rowBgra = bgraData + (isTopDown ? y : (realHeight - 1 - y)) * realWidth * 4;
+                for (int x = 0; x < realWidth; ++x) {
+                    if (rowBgra[x * 4 + 3] == 0) rowBgra[x * 4 + 3] = 255;
+                }
+            }
+        }
+    }
+
+    return bgra;
 }
 
 
@@ -841,12 +992,14 @@ std::tuple<cv::Mat, string> ImageDatabase::loadICO(wstring_view path, std::span<
             imgs.emplace_back(cv::imdecode(rawData, cv::IMREAD_UNCHANGED));
             continue;
         }
-
-        DibHeader* dibHeader = (DibHeader*)(buf.data() + entry.dataOffset);
-        if (dibHeader->headerSize != 0x28)
-            continue;
-
-        imgs.emplace_back(readDibFromMemory((uint8_t*)(buf.data() + entry.dataOffset), entry.dataSize));
+        else {
+            cv::Mat img = readDibFromMemory(buf.data() + entry.dataOffset, entry);
+            if (!img.empty()) {
+                imgs.emplace_back(std::move(img));
+                continue;
+            }
+            JARK_LOG("Unrecognized image format at offset {}", entry.dataOffset);
+        }
     }
 
     int totalWidth = 0;
