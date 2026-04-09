@@ -514,7 +514,7 @@ void jarkUtils::ToggleFullScreen(HWND hwnd) {
 }
 
 // 假设 canvas 完全没有透明像素
-void jarkUtils::overlayImg(cv::Mat& canvas, cv::Mat& img, int xOffset, int yOffset) {
+void jarkUtils::overlayImg(cv::Mat& canvas, const cv::Mat& img, int xOffset, int yOffset) {
     if (canvas.type() != CV_8UC4 || img.type() != CV_8UC4)
         return;
 

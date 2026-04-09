@@ -357,11 +357,26 @@ public:
         }
     }
 
+    // 反相
+    cv::Mat toInvertedMat(const cv::Mat& src) {
+        std::vector<cv::Mat> bgra(4);
+        cv::split(src, bgra);
+
+        // 仅对 B、G、R 通道取反 (255 - pixel_value)
+        bgra[0] = 255 - bgra[0]; // B
+        bgra[1] = 255 - bgra[1]; // G
+        bgra[2] = 255 - bgra[2]; // R
+
+        cv::Mat dst;
+        cv::merge(bgra, dst);
+        return dst;
+    }
 
     void refreshUI() {
 
         cv::Mat adjusted = params.previewImage.clone();
         ApplyImageAdjustments(adjusted, params.brightness, params.contrast, params.colorMode, params.invertColors);
+        cv::cvtColor(adjusted, adjusted, cv::COLOR_BGR2BGRA);
 
         // 扩展为正方形画布
         int outputSize = std::max(adjusted.rows, adjusted.cols);
@@ -369,17 +384,22 @@ public:
         int y = (outputSize - adjusted.rows) / 2;
 
         // 画布高度+150 放置三行底栏：两行拖动条，一行按钮
-        cv::Mat squareMat(outputSize + 150, outputSize, CV_8UC3, cv::Scalar(255, 255, 255));
+        cv::Mat squareMat(outputSize + 150, outputSize, CV_8UC4, jarkUtils::to_cv_scalar(GlobalVar::currentTheme.BG));
         cv::Mat roi = squareMat(cv::Rect(x, y + 150, adjusted.cols, adjusted.rows));
         adjusted.copyTo(roi);
 
-        cv::cvtColor(squareMat, squareMat, cv::COLOR_BGR2BGRA);
-
-        jarkUtils::overlayImg(squareMat, buttonColorMode[params.colorMode], 0, 0);
-        jarkUtils::overlayImg(squareMat, params.invertColors ? buttonInvert : buttonNormal, 400, 0);
-        jarkUtils::overlayImg(squareMat, buttonPrint, 600, 0);
-        jarkUtils::overlayImg(squareMat, trackbarBg, 0, 50);
-
+        if (GlobalVar::isCurrentUIDarkMode) {
+            jarkUtils::overlayImg(squareMat, toInvertedMat(buttonColorMode[params.colorMode]), 0, 0);
+            jarkUtils::overlayImg(squareMat, toInvertedMat(params.invertColors ? buttonInvert : buttonNormal), 400, 0);
+            jarkUtils::overlayImg(squareMat, toInvertedMat(buttonPrint), 600, 0);
+            jarkUtils::overlayImg(squareMat, toInvertedMat(trackbarBg), 0, 50);
+        }
+        else {
+            jarkUtils::overlayImg(squareMat, buttonColorMode[params.colorMode], 0, 0);
+            jarkUtils::overlayImg(squareMat, params.invertColors ? buttonInvert : buttonNormal, 400, 0);
+            jarkUtils::overlayImg(squareMat, buttonPrint, 600, 0);
+            jarkUtils::overlayImg(squareMat, trackbarBg, 0, 50);
+        }
         textDrawer.putAlignLeft(squareMat, { 120, 60, 200, 900 }, std::format("{:3} %", params.brightness).c_str(), GlobalVar::currentTheme.FG);
         textDrawer.putAlignLeft(squareMat, { 120, 110, 200, 900 }, std::format("{:3} %", params.contrast).c_str(), GlobalVar::currentTheme.FG);
 
