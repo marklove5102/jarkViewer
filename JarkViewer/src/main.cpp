@@ -174,8 +174,7 @@ struct CurImageParameter {
 };
 
 
-class ExtraUIRes
-{
+class ExtraUIRes {
 public:
     cv::Mat mainRes, leftArrow, rightArrow, leftRotate, rightRotate, printer, setting, animationBarPlaying, animationBarPausing;
 
@@ -324,52 +323,52 @@ public:
 
     inline void handleAnimationControl(int x, int y) {
         // 按钮ID  0:上一帧  1:暂停/继续  2:下一帧  3:保存该帧
-        int buttonIdx = (abs(winWidth / 2 - x) > 100 ? -1 : (x + 100 - winWidth / 2) / 50);
-        if (curPar.imageAssetPtr->format == ImageFormat::Animated && buttonIdx >= 0) {
-            if (curPar.isAnimationPause) {
-                switch (buttonIdx)
-                {
-                case 0: {
-                    if (--curPar.curFrameIdx < 0)
-                        curPar.curFrameIdx = curPar.curFrameIdxMax;
-                    operateQueue.push({ ActionENUM::normalFresh });
-                }break;
-                case 1: {
-                    curPar.isAnimationPause = !curPar.isAnimationPause;
-                    operateQueue.push({ ActionENUM::normalFresh });
-                }break;
-                case 2: {
-                    if (++curPar.curFrameIdx > curPar.curFrameIdxMax)
-                        curPar.curFrameIdx = 0;
-                    operateQueue.push({ ActionENUM::normalFresh });
-                }break;
-                case 3: {
-                    auto [filePath, isJPG] = jarkUtils::saveImageDialogW(getUIStringW(4));
-                    if (filePath.length() <= 2)
-                        break;
+        int buttonIdx = (x + 100 - winWidth / 2) / 50;
+        if (buttonIdx < 0 || 3 < buttonIdx || curPar.imageAssetPtr->format != ImageFormat::Animated)
+            return;
 
-                    cv::Mat img;
-                    if (curPar.imageAssetPtr->format == ImageFormat::None || curPar.imageAssetPtr->format == ImageFormat::Still)
-                        img = curPar.imageAssetPtr->primaryFrame;
-                    else
-                        img = curPar.imageAssetPtr->frames[curPar.curFrameIdx];
+        if (curPar.isAnimationPause) {
+            switch (buttonIdx) {
+            case 0: {
+                if (--curPar.curFrameIdx < 0)
+                    curPar.curFrameIdx = curPar.curFrameIdxMax;
+                operateQueue.push({ ActionENUM::normalFresh });
+            }break;
+            case 1: {
+                curPar.isAnimationPause = !curPar.isAnimationPause;
+                operateQueue.push({ ActionENUM::normalFresh });
+            }break;
+            case 2: {
+                if (++curPar.curFrameIdx > curPar.curFrameIdxMax)
+                    curPar.curFrameIdx = 0;
+                operateQueue.push({ ActionENUM::normalFresh });
+            }break;
+            case 3: {
+                auto [filePath, isJPG] = jarkUtils::saveImageDialogW(getUIStringW(4));
+                if (filePath.length() <= 2)
+                    break;
 
-                    std::vector<uchar> buffer;
-                    if (cv::imencode(isJPG ? ".jpg" : ".png", img, buffer)) {
-                        std::ofstream file(filePath, std::ios::binary);
-                        if (file.is_open()) {
-                            file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());
-                            file.close();
-                        }
+                cv::Mat img;
+                if (curPar.imageAssetPtr->format == ImageFormat::None || curPar.imageAssetPtr->format == ImageFormat::Still)
+                    img = curPar.imageAssetPtr->primaryFrame;
+                else
+                    img = curPar.imageAssetPtr->frames[curPar.curFrameIdx];
+
+                std::vector<uchar> buffer;
+                if (cv::imencode(isJPG ? ".jpg" : ".png", img, buffer)) {
+                    std::ofstream file(filePath, std::ios::binary);
+                    if (file.is_open()) {
+                        file.write(reinterpret_cast<const char*>(buffer.data()), buffer.size());
+                        file.close();
                     }
-                }break;
                 }
+            }break;
             }
-            else {
-                if (buttonIdx == 1) {
-                    curPar.isAnimationPause = !curPar.isAnimationPause;
-                    operateQueue.push({ ActionENUM::normalFresh });
-                }
+        }
+        else {
+            if (buttonIdx == 1) {
+                curPar.isAnimationPause = !curPar.isAnimationPause;
+                operateQueue.push({ ActionENUM::normalFresh });
             }
         }
     }

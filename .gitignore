@@ -1,12 +1,10 @@
 .vs
 .vscode
 .omx
+.claude
 build
 x64
 /JarkViewer/JarkViewer.aps
 /JarkViewer/file/home.psd
 /JarkViewer/file/tips.psd
-/associate_images.bat
-/associate_images_uninstall.bat
-/donate.png
 /JarkViewer/lib/Psd_MT.pdb

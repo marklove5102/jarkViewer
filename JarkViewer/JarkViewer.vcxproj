@@ -158,7 +158,6 @@
   <ItemGroup>
     <ClInclude Include="include\avif\avif.h" />
     <ClInclude Include="include\blpDecoder.h" />
-    <ClInclude Include="include\channel.h" />
     <ClInclude Include="include\D2D1App.h" />
     <ClInclude Include="include\exifParse.h" />
     <ClInclude Include="include\FileAssociationNaming.h" />
