@@ -179,7 +179,7 @@ HRESULT D3D11App::Initialize(HINSTANCE hInstance) {
     wcex.hbrBackground = nullptr;
     wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = L"D3D11WndClass";
-    wcex.hIcon = nullptr;
+    wcex.hIcon = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDI_JARKVIEWER));
     RegisterClassExW(&wcex);
 
     RECT window_rect = GlobalVar::settingParameter.showCmd == SW_NORMAL ? GlobalVar::settingParameter.rect : RECT{ 0, 0, 800, 600 };
@@ -192,13 +192,9 @@ HRESULT D3D11App::Initialize(HINSTANCE hInstance) {
     if (SUCCEEDED(hr)) {
         CreateDeviceResources();
 
-        DragAcceptFiles(m_hWnd, TRUE);
-
-
-        // DWMWA_USE_IMMERSIVE_DARK_MODE(20) 仅 Win10 1809+ 生效，Win7 上返回 E_INVALIDARG 但不影响运行
         BOOL themeMode = GlobalVar::isCurrentUIDarkMode;
         DwmSetWindowAttribute(m_hWnd, 20, &themeMode, sizeof(BOOL));
-
+        DragAcceptFiles(m_hWnd, TRUE);
         ShowWindow(m_hWnd, GlobalVar::settingParameter.showCmd == SW_NORMAL ? SW_NORMAL : SW_MAXIMIZE);
         UpdateWindow(m_hWnd);
     }

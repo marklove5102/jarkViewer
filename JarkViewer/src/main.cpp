@@ -244,7 +244,6 @@ public:
         if (m_pD3DDevice == nullptr)
             return S_FALSE;
 
-        jarkUtils::setWindowIcon(m_hWnd, IDI_JARKVIEWER);
         return S_OK;
     }
 
