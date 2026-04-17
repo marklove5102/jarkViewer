@@ -30,16 +30,16 @@ msbuild JarkViewer\JarkViewer.vcxproj /p:Configuration=Debug /p:Platform=x64
 ## 架构
 
 ### 渲染双轨制
-- **主窗口**：Direct2D 1.1 + D3D11 + DXGI 交换链，硬件加速渲染（`D2D1App` 基类）
+- **主窗口**：Direct2D 1.1 + D3D11 + DXGI 交换链，硬件加速渲染（`D3D11App` 基类）
 - **辅助对话框**（设置、打印）：OpenCV HighGUI (`cv::imshow` + 鼠标回调)
 
 ### 核心源码 (`JarkViewer/src/`)
 
 | 文件 | 职责 |
 |------|------|
-| `main.cpp` | WinMain 入口，主应用类继承 `D2D1App`，包含所有交互事件、渲染循环、幻灯片逻辑 |
+| `main.cpp` | WinMain 入口，主应用类继承 `D3D11App`，包含所有交互事件、渲染循环、幻灯片逻辑 |
 | `ImageDatabase.cpp` | 图片加载引擎，扩展 `LRU` 缓存模板，按格式分发到各解码器（OpenCV/libheif/libavif/libjxl/libraw/lunasvg/PSD SDK/FFmpeg 等） |
-| `D2D1App.cpp` | Direct2D 应用框架：窗口创建、D3D11/D2D1 设备初始化、交换链管理、消息循环、设置二进制读写 |
+| `D3D11App.cpp` | Direct3D 11 应用框架：窗口创建、D3D11 初始化、消息循环、设置二进制读写 |
 | `jarkUtils.cpp` | 工具函数：字符串转换(UTF-8/wstring)、文件I/O、剪贴板、窗口操作 |
 | `exifParse.cpp` | EXIF/XMP/IPTC 元数据提取（exiv2），含 AI 生图 prompt 解析 |
 | `videoDecoder.cpp` | FFmpeg 视频帧解码 |
@@ -59,7 +59,7 @@ msbuild JarkViewer\JarkViewer.vcxproj /p:Configuration=Debug /p:Platform=x64
 | `Setting.h` | 设置对话框（4 个标签页） |
 
 ### 图片解码流程
-`ImageDatabase::loadImage()` 根据文件扩展名分发 -> 格式特定解码器 -> 返回 `ImageAsset`（含帧序列和元数据） -> 存入 LRU 缓存 -> `D2D1App` 渲染到屏幕
+`ImageDatabase::loadImage()` 根据文件扩展名分发 -> 格式特定解码器 -> 返回 `ImageAsset`（含帧序列和元数据） -> 存入 LRU 缓存 -> `D3D11App` 渲染到屏幕
 
 ## 代码风格
 
